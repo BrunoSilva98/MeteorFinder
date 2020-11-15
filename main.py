@@ -15,6 +15,7 @@ def get_frames(cap, num):
         ret, frame = cap.read()
         if not ret:
             break
+        frame = frame[:frame.shape[0]-15, :]
         frames.append(frame)
     return frames
 
@@ -27,22 +28,22 @@ def display(img):
 
 def process_frames(frames):
     processed = list()
+    kernel = np.ones((3, 3), np.uint8)
     for img in frames:
         frame = img.copy()
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         frame = cv2.medianBlur(frame, 1)
-        frame = cv2.threshold(frame, 80, 255, cv2.THRESH_BINARY)
-        frame = cv2.dilate(frame, 3, iterations=2)
+        frame = cv2.threshold(frame, 80, 255, cv2.THRESH_BINARY)[1]
+        frame = cv2.dilate(frame, kernel, iterations=1)
         processed.append(frame)
     return processed
 
 
 def sum_frames(frames):
     if len(frames) > 0:
-        shape = frames[0].shape
-        kernel = np.zeros((shape[1], shape[0]), dtype=np.uint8)
+        kernel = np.zeros(frames[0].shape, dtype=np.uint8)
         for frame in frames:
-            kernel = kernel + frame
+            kernel = cv2.add(kernel, frame)
         return kernel
     return None
 
@@ -50,9 +51,10 @@ def sum_frames(frames):
 def add_weighted(frames):
     if len(frames) > 0:
         shape = frames[0].shape
-        kernel = np.zeros((shape[1], shape[0], shape[2]), dtype=np.uint8)
+        kernel = np.zeros(shape, dtype=np.uint8)
         for frame in frames:
-            kernel = cv2.addWeighted(kernel, 0.7, frame, 1)
+            kernel = cv2.addWeighted(kernel, 0.8, frame, 0.4, 0)
+        display(kernel)
         return kernel
     return None
 
@@ -70,7 +72,7 @@ def yolo_detect(net, img):
 
 
 if __name__ == '__main__':
-    PATH = "/home/bruno/data/meteoros/dataset/juntos"
+    PATH = "/home/bruno/data/meteoros/dataset/juntos/"
     net = yolo.create_network("config/yolov4-tiny_best.weights", "config/yolov4-tiny.cfg")
 
     videos = os.listdir(PATH)
@@ -79,7 +81,7 @@ if __name__ == '__main__':
     reset = 0
 
     for video in videos:
-        cap = cv2.VideoCapture(video)
+        cap = cv2.VideoCapture("M20190109_062703_MAD_1.avi")
         fps = cap.get(cv2.CAP_PROP_FPS)
         reset += 1
 
@@ -89,13 +91,13 @@ if __name__ == '__main__':
 
         if background is None:
             background = get_frames(cap, int(fps/2))
-            original_background = add_weighted(background)
-            background_detection = yolo_detect(net, original_background)
+            # original_background = add_weighted(background)
+            # background_detection = yolo_detect(net, original_background)
 
-        if background_detection:
-            background = None
-            reset = 0
-            continue
+        # if background_detection:
+        #     background = None
+        #     reset = 0
+        #     continue
 
         processed_background = process_frames(background)
         sky_frames = get_frames(cap, int(fps*5))
@@ -103,7 +105,7 @@ if __name__ == '__main__':
         summed_sky = sum_frames(processed_sky)
         summed_background = sum_frames(processed_background)
         diff = cv2.absdiff(summed_sky, summed_background)
-        countours = cv2.findContours(diff, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0]
+        countours = cv2.findContours(diff, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)[0]
         area = [count for count in countours if cv2.contourArea(count) > 30]
 
         if len(area) > 0:
